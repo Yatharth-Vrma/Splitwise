@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { auth } from '../../firebase';
+import { auth, db } from '../../firebase';
 import { createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, updateProfile } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 
 const SignUp = () => {
@@ -15,6 +16,13 @@ const SignUp = () => {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await updateProfile(userCredential.user, { displayName: name });
+      // Save user data to Firestore
+      await setDoc(doc(db, 'users', userCredential.user.uid), {
+        uid: userCredential.user.uid,
+        email: userCredential.user.email,
+        name: name || '',
+        photoURL: userCredential.user.photoURL || '',
+      }, { merge: true });
       navigate('/dashboard');
     } catch (err) {
       setError(err.message);
@@ -24,7 +32,14 @@ const SignUp = () => {
   const handleGoogleSignUp = async () => {
     const provider = new GoogleAuthProvider();
     try {
-      await signInWithPopup(auth, provider);
+      const userCredential = await signInWithPopup(auth, provider);
+      // Save user data to Firestore
+      await setDoc(doc(db, 'users', userCredential.user.uid), {
+        uid: userCredential.user.uid,
+        email: userCredential.user.email,
+        name: userCredential.user.displayName || '',
+        photoURL: userCredential.user.photoURL || '',
+      }, { merge: true });
       navigate('/dashboard');
     } catch (err) {
       setError(err.message);
@@ -32,11 +47,13 @@ const SignUp = () => {
   };
 
   return (
-    <div className="relative flex size-full min-h-screen flex-col bg-slate-50 group/design-root overflow-x-hidden" style={{ fontFamily: 'Inter, "Noto Sans", sans-serif' }}>
-      {/* 2. Layout Container: Make it grow and center its content */}
-      <div className="layout-container flex h-full grow flex-col **justify-center items-center**"> {/* ADDED justify-center items-center */}
-        <header className="flex items-center justify-between whitespace-nowrap border-b border-solid border-b-[#e7edf3] px-10 py-3 **w-full absolute top-0**"> {/* ADDED w-full absolute top-0 */}
-          <div className="flex items-center gap-4 text-[#0e141b]"> {/* CHANGED class to className */}
+    <div
+      className="relative flex size-full min-h-screen flex-col bg-slate-50 group/design-root overflow-x-hidden"
+      style={{ fontFamily: 'Inter, "Noto Sans", sans-serif' }}
+    >
+      <div className="layout-container flex h-full grow flex-col justify-center items-center">
+        <header className="flex items-center justify-between whitespace-nowrap border-b border-solid border-b-[#e7edf3] px-10 py-3 w-full absolute top-0">
+          <div className="flex items-center gap-4 text-[#0e141b]">
             <div className="size-4">
               <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path
@@ -50,14 +67,12 @@ const SignUp = () => {
             <h2 className="text-[#0e141b] text-lg font-bold leading-tight tracking-[-0.015em]">ExpenseTracker</h2>
           </div>
         </header>
-        {/* 3. Content Wrapper: This is the container for your signup form, also centered */}
-        <div className="px-4 sm:px-40 flex flex-1 justify-center items-center py-5"> {/* ADDED items-center */}
+        <div className="px-4 sm:px-40 flex flex-1 justify-center items-center py-5">
           <div className="layout-content-container flex flex-col w-full sm:w-[512px] max-w-[512px] py-5 flex-1">
             <h2 className="text-[#0e141b] tracking-tight text-[28px] font-bold leading-tight px-4 text-center pb-3 pt-5">Sign up</h2>
             {error && <p className="text-red-500 text-center px-4 py-2">{error}</p>}
             <form onSubmit={handleSignUp} className="space-y-4">
-              {/* Name Input */}
-              <div className="flex max-w-[480px] flex-wrap items-end gap-4 px-4 py-3 **mx-auto**"> {/* ADDED mx-auto */}
+              <div className="flex max-w-[480px] flex-wrap items-end gap-4 px-4 py-3 mx-auto">
                 <label className="flex flex-col min-w-40 flex-1">
                   <p className="text-[#0e141b] text-base font-medium leading-normal pb-2">Your name</p>
                   <input
@@ -65,11 +80,11 @@ const SignUp = () => {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-[#0e141b] focus:outline-0 focus:ring-0 border-none bg-[#e7edf3] focus:border-none h-14 placeholder:text-[#4e7297] p-4 text-base font-normal leading-normal"
+                    required
                   />
                 </label>
               </div>
-              {/* Email Input */}
-              <div className="flex max-w-[480px] flex-wrap items-end gap-4 px-4 py-3 **mx-auto**"> {/* ADDED mx-auto */}
+              <div className="flex max-w-[480px] flex-wrap items-end gap-4 px-4 py-3 mx-auto">
                 <label className="flex flex-col min-w-40 flex-1">
                   <p className="text-[#0e141b] text-base font-medium leading-normal pb-2">Email</p>
                   <input
@@ -78,11 +93,11 @@ const SignUp = () => {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-[#0e141b] focus:outline-0 focus:ring-0 border-none bg-[#e7edf3] focus:border-none h-14 placeholder:text-[#4e7297] p-4 text-base font-normal leading-normal"
+                    required
                   />
                 </label>
               </div>
-              {/* Password Input */}
-              <div className="flex max-w-[480px] flex-wrap items-end gap-4 px-4 py-3 **mx-auto**"> {/* ADDED mx-auto */}
+              <div className="flex max-w-[480px] flex-wrap items-end gap-4 px-4 py-3 mx-auto">
                 <label className="flex flex-col min-w-40 flex-1">
                   <p className="text-[#0e141b] text-base font-medium leading-normal pb-2">Password</p>
                   <input
@@ -91,35 +106,34 @@ const SignUp = () => {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-[#0e141b] focus:outline-0 focus:ring-0 border-none bg-[#e7edf3] focus:border-none h-14 placeholder:text-[#4e7297] p-4 text-base font-normal leading-normal"
+                    required
                   />
                 </label>
               </div>
-              {/* Sign up Button Container */}
-              <div className="flex px-4 py-3 justify-center"> {/* ADDED max-w-[480px] mx-auto */}
+              <div className="flex max-w-[480px] mx-auto px-4 py-3 justify-center">
                 <button
                   type="submit"
-                  className="flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 **w-full** bg-[#197ce5] text-slate-50 text-sm font-bold leading-normal tracking-[0.015em]" /* CHANGED flex-1 to w-full, removed max-w */
+                  className="flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 w-full sm:w-48 bg-[#197ce5] text-slate-50 text-sm font-bold leading-normal tracking-[0.015em]"
                 >
                   <span className="truncate">Sign up</span>
                 </button>
               </div>
             </form>
-            <p className="text-[#4e7297] text-sm font-normal leading-normal pb-3 pt-1 px-4 text-center">Or</p>
-            {/* Sign up with Google Button Container */}
-            <div className="flex px-4 py-3 justify-center"> {/* ADDED max-w-[480px] mx-auto */}
+            <p className="text-[#4e7297] text-sm font-normal leading-normal pb-3 pt-1 px-4 text-center">or</p>
+            <div className="flex px-4 py-3 justify-center">
               <button
                 onClick={handleGoogleSignUp}
-                className="flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 **w-full** bg-[#e7edf3] text-[#0e141b] gap-2 pl-4 text-sm font-bold leading-normal tracking-[0.015em]" 
+                className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 w-full bg-[#e7edf3] text-[#0e141b] gap-2 pl-4 text-sm font-bold leading-normal tracking-[0.015em]"
               >
                 <div className="text-[#0e141b]">
                   <svg xmlns="http://www.w3.org/2000/svg" width="20px" height="20px" fill="currentColor" viewBox="0 0 256 256">
-                    <path d="M224,128a96,96,0,1,1-21.95-61.09,8,8,0,1,1-12.33,10.18A80,80,0,1,0,207.6,136H128a8,8,0,0,1,0-16h88A8,8,0,0,1,224,128Z" />
+                    <path d="M224,128a96,96,0,1,1-21.95-61.09,8,8,0,1,1-12.33,10.645A80,80,0,1,0,207.6,136H128a8,8,0,0,1,0-16h88A8,8,0,0,1,224,128Z" />
                   </svg>
                 </div>
                 <span className="truncate">Sign up with Google</span>
               </button>
             </div>
-            <p className="text-[#4e7297] text-sm font-normal leading-normal pb-3 pt-1 px-4 text-center">
+            <p className="text-[#4e7297] text-sm font-medium leading-normal pb-3 pt-3 px-4 text-center">
               <a href="/login" className="underline">Already have an account? Log in</a>
             </p>
           </div>

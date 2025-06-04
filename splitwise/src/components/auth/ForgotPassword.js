@@ -11,9 +11,14 @@ const ForgotPassword = () => {
 
   const handleResetPassword = async (e) => {
     e.preventDefault();
+    if (!email) {
+      setError('Please enter your email address.');
+      return;
+    }
     try {
       await sendPasswordResetEmail(auth, email);
       setMessage('Password reset email sent. Check your inbox.');
+      setError('');
       setTimeout(() => navigate('/login'), 3000);
     } catch (err) {
       setError(err.message);
@@ -21,10 +26,12 @@ const ForgotPassword = () => {
   };
 
   return (
-    <div className="relative flex size-full min-h-screen flex-col bg-slate-50 group/design-root overflow-x-hidden" style={{ fontFamily: 'Inter, "Noto Sans", sans-serif' }}>
-      {/* 2. Layout Container: Make it grow and center its content */}
-      <div className="layout-container flex h-full grow flex-col **justify-center items-center**"> {/* ADDED justify-center items-center */}
-        <header className="flex items-center justify-between whitespace-nowrap border-b border-solid border-b-[#e7edf3] px-10 py-3 **w-full absolute top-0**"> {/* ADDED w-full absolute top-0 */}
+    <div
+      className="relative flex size-full min-h-screen flex-col bg-slate-50 group/design-root overflow-x-hidden"
+      style={{ fontFamily: 'Inter, "Noto Sans", sans-serif' }}
+    >
+      <div className="layout-container flex h-full grow flex-col justify-center items-center">
+        <header className="flex items-center justify-between whitespace-nowrap border-b border-solid border-b-[#e7edf3] px-10 py-3 w-full absolute top-0">
           <div className="flex items-center gap-4 text-[#0e141b]">
             <div className="size-4">
               <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -39,14 +46,13 @@ const ForgotPassword = () => {
             <h2 className="text-[#0e141b] text-lg font-bold leading-tight tracking-[-0.015em]">ExpenseTracker</h2>
           </div>
         </header>
-        {/* Content Wrapper: This is the container for your forgot password form, also centered */}
-        <div className="px-4 sm:px-40 flex flex-1 justify-center **items-center** py-5"> {/* ADDED items-center */}
+        <div className="px-4 sm:px-40 flex flex-1 justify-center items-center py-5">
           <div className="layout-content-container flex flex-col w-full sm:w-[512px] max-w-[512px] py-5 flex-1">
             <h2 className="text-[#0e141b] tracking-tight text-[28px] font-bold leading-tight px-4 text-center pb-3 pt-5">Reset Password</h2>
             {message && <p className="text-green-500 text-center px-4 py-2">{message}</p>}
             {error && <p className="text-red-500 text-center px-4 py-2">{error}</p>}
             <form onSubmit={handleResetPassword} className="space-y-4">
-              <div className="flex max-w-[480px] flex-wrap items-end gap-4 px-4 py-3 **mx-auto**"> {/* ADDED mx-auto */}
+              <div className="flex max-w-[480px] flex-wrap items-end gap-4 px-4 py-3 mx-auto">
                 <label className="flex flex-col min-w-40 flex-1">
                   <p className="text-[#0e141b] text-base font-medium leading-normal pb-2">Email</p>
                   <input
@@ -55,13 +61,14 @@ const ForgotPassword = () => {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-[#0e141b] focus:outline-0 focus:ring-0 border-none bg-[#e7edf3] focus:border-none h-14 placeholder:text-[#4e7297] p-4 text-base font-normal leading-normal"
+                    required
                   />
                 </label>
               </div>
-              <div className="flex px-4 py-3 **max-w-[480px] mx-auto**"> {/* ADDED max-w-[480px] mx-auto */}
+              <div className="flex max-w-[480px] mx-auto px-4 py-3 justify-center">
                 <button
                   type="submit"
-                  className="flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 **w-full** bg-[#197ce5] text-slate-50 text-sm font-bold leading-normal tracking-[0.015em]"
+                  className="flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 w-full sm:w-48 bg-[#197ce5] text-slate-50 text-sm font-bold leading-normal tracking-[0.015em]"
                 >
                   <span className="truncate">Send Reset Email</span>
                 </button>
