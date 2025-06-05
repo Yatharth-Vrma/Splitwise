@@ -11,9 +11,11 @@ import Dashboard from "./components/core/Dashboard";
 import GroupList from "./components/core/GroupList";
 import GroupCreation from "./components/core/GroupCreation";
 import GroupDetail from "./components/core/GroupDetail";
+import NotificationsPage from "./components/core/NotificationPanel";
 import ExpenseForm from "./components/core/ExpenseForm";
 import ExpenseList from "./components/core/ExpenseList";
 import SettleUp from "./components/core/SettleUp";
+import Friends from "./components/core/Friends";
 
 function ProtectedRoute({ children }) {
   return auth.currentUser ? children : <Navigate to="/login" />;
@@ -97,6 +99,22 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/friends"
+          element={
+            <ProtectedRoute>
+              <Friends />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+  path="/notifications"
+  element={
+    <ProtectedRoute>
+      <NotificationsPage />
+    </ProtectedRoute>
+  }
+/>
       </Routes>
     </Router>
   );

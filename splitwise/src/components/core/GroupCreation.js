@@ -3,79 +3,66 @@ import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../../firebase';
 import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 
+const PROFILE_IMG = "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"; // Consistent profile icon
+
 const GroupCreation = () => {
   const navigate = useNavigate();
   const [groupName, setGroupName] = useState('');
-  const [memberEmails, setMemberEmails] = useState(''); // This input can now be optional
+  const [memberEmails, setMemberEmails] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleCreateGroup = async (e) => {
-    e.preventDefault(); // Prevent default form submission
-
+    e.preventDefault();
     if (!groupName.trim()) {
       setError('Group name is required.');
       return;
     }
-
     setLoading(true);
     setError('');
-
     try {
       if (!auth.currentUser) {
         throw new Error('You must be logged in to create a group.');
       }
-
-      // Initialize emails array with the current user's email, converted to lowercase
       const emailsToQuery = [auth.currentUser.email.toLowerCase()];
-
-      // If there are additional member emails from the input, process them
       if (memberEmails.trim()) {
         const additionalEmails = memberEmails
           .split(',')
           .map((email) => email.trim().toLowerCase())
           .filter((email) => email);
-
-        // Add unique additional emails to the list to query
         additionalEmails.forEach(email => {
-          if (!emailsToQuery.includes(email)) { // Prevent duplicates if current user's email is also in input
+          if (!emailsToQuery.includes(email)) {
             emailsToQuery.push(email);
           }
         });
       }
-
-      // Fetch user UIDs for all collected emails
       const userQuery = query(collection(db, 'users'), where('email', 'in', emailsToQuery));
       const userSnapshot = await getDocs(userQuery);
 
       const members = [];
       const balance = {};
-
       userSnapshot.forEach((doc) => {
         const userData = doc.data();
         members.push(userData.uid);
-        balance[userData.uid] = 0; // Initialize balance for each member
+        balance[userData.uid] = 0;
       });
 
-      // Check if all requested emails were found
       if (members.length !== emailsToQuery.length) {
-        // Find which emails were not found for a more descriptive error
         const foundEmails = userSnapshot.docs.map(doc => doc.data().email.toLowerCase());
         const notFoundEmails = emailsToQuery.filter(email => !foundEmails.includes(email));
         throw new Error(`Some email addresses were not found: ${notFoundEmails.join(', ')}. Please ensure they are registered.`);
       }
 
-      // Create group in Firestore
       await addDoc(collection(db, 'groups'), {
         name: groupName,
-        members, // Use the UIDs of found members
-        balance, // Initial balances
+        members,
+        balance,
         createdAt: new Date().toISOString(),
       });
 
-      navigate('/groups'); // Redirect after successful creation
+      navigate('/groups');
     } catch (err) {
-      console.error("Error creating group:", err); // Log the full error for debugging
+      console.error("Error creating group:", err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -83,13 +70,12 @@ const GroupCreation = () => {
   };
 
   return (
-    <div className="relative flex min-h-screen flex-col bg-gray-50 overflow-x-hidden" style={{ fontFamily: 'Inter, Noto Sans, sans-serif' }}>
+    <div className="relative flex min-h-screen flex-col bg-gray-50 overflow-x-hidden font-sans">
       <div className="layout-container flex h-full grow flex-col">
         {/* Header */}
-        <header className="flex items-center justify-between border-b border-[#eaedf1] px-10 py-3">
+        <header className="flex items-center justify-between border-b border-[#eaedf1] px-4 sm:px-6 md:px-10 py-3 bg-slate-50">
           <div className="flex items-center gap-4 text-[#101418]">
             <div className="size-4">
-              {/* Your SVG icon */}
               <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path
                   fillRule="evenodd"
@@ -101,23 +87,23 @@ const GroupCreation = () => {
             </div>
             <h2 className="text-lg font-bold">ExpenseTracker</h2>
           </div>
-          <div className="flex flex-1 justify-end gap-8">
+          <div className="flex flex-1 justify-end gap-2 sm:gap-8">
             <button className="h-10 px-2.5 bg-[#eaedf1] rounded-xl font-bold">?</button>
-            <div className="bg-cover rounded-full size-10" style={{ backgroundImage: `url("${auth.currentUser?.photoURL || 'https://via.placeholder.com/40'}")` }}></div>
+            <div className="bg-cover rounded-full size-10" style={{ backgroundImage: `url("${PROFILE_IMG}")` }}></div>
           </div>
         </header>
 
         {/* Group Creation Form */}
-        <div className="px-40 flex flex-1 justify-center py-5">
-          <div className="w-full max-w-[512px]">
-            <p className="text-[32px] font-bold mb-4">Create a group</p>
+        <div className="flex flex-1 justify-center py-5 px-2 sm:px-10 md:px-20">
+          <div className="w-full max-w-[512px] bg-white rounded-xl shadow-sm p-4 sm:p-6 md:p-8">
+            <p className="text-[24px] sm:text-[32px] font-bold mb-4">Create a group</p>
             {error && <p className="text-red-500 text-center mb-4">{error}</p>}
 
             <form onSubmit={handleCreateGroup}>
               <div className="mb-4">
                 <label className="block mb-2 font-medium">Group name</label>
                 <input
-                  className="w-full h-14 p-[15px] border border-[#d4dbe2] rounded-xl placeholder:text-[#5c728a]"
+                  className="w-full h-12 sm:h-14 p-3 border border-[#d4dbe2] rounded-xl placeholder:text-[#5c728a] text-base"
                   placeholder="e.g. Weekend trip"
                   value={groupName}
                   onChange={(e) => setGroupName(e.target.value)}
@@ -128,19 +114,17 @@ const GroupCreation = () => {
               <div className="mb-4">
                 <label className="block mb-2 font-medium">Group members (optional, comma-separated emails)</label>
                 <input
-                  className="w-full h-14 p-[15px] border border-[#d4dbe2] rounded-xl placeholder:text-[#5c728a]"
+                  className="w-full h-12 sm:h-14 p-3 border border-[#d4dbe2] rounded-xl placeholder:text-[#5c728a] text-base"
                   placeholder="e.g. friend1@example.com, friend2@example.com"
                   value={memberEmails}
                   onChange={(e) => setMemberEmails(e.target.value)}
-                  // Make this input optional if you want to allow creating with just the current user
-                  // Do NOT use 'required' here if you want to allow creating with just yourself
                 />
               </div>
 
               <div className="flex justify-end">
                 <button
                   type="submit"
-                  className="h-10 px-4 bg-[#b2cbe5] rounded-xl font-bold disabled:opacity-50"
+                  className="h-10 px-4 bg-[#b2cbe5] rounded-xl font-bold text-[#101418] text-sm sm:text-base disabled:opacity-50"
                   disabled={loading}
                 >
                   {loading ? 'Creating...' : 'Create group'}

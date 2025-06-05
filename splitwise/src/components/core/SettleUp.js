@@ -1,8 +1,63 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams, NavLink } from 'react-router-dom';
-import { auth, db } from '../../firebase';
-import { doc, getDoc, collection, addDoc, updateDoc } from 'firebase/firestore';
-import { Timestamp } from 'firebase/firestore';
+import React, { useState, useEffect } from "react";
+import { useNavigate, useParams, NavLink } from "react-router-dom";
+import { auth, db } from "../../firebase";
+import { doc, getDoc, collection, getDocs, addDoc } from "firebase/firestore";
+import { Timestamp } from "firebase/firestore";
+
+const PROFILE_IMG = "https://cdn-icons-png.flaticon.com/512/3135/3135715.png";
+
+// Helper to compute net balances from all transactions (Splitwise-style)
+function calculateBalances(groupMembers, transactions) {
+  const balances = {};
+  groupMembers.forEach((uid) => (balances[uid] = 0));
+  transactions.forEach((txn) => {
+    if (txn.type === "settlement") {
+      // Settlement: money moves from txn.from to txn.to
+      balances[txn.from] += txn.amount;
+      balances[txn.to] -= txn.amount;
+    } else if (txn.participants && Array.isArray(txn.participants)) {
+      // Standard expense
+      const paidBy = txn.paidBy;
+      const total = Number(txn.amount) || 0;
+      balances[paidBy] += total;
+      txn.participants.forEach((p) => {
+        balances[p.uid] -= Number(p.amount) || 0;
+      });
+    }
+  });
+  return balances;
+}
+
+// Greedy debt settlement (minimize number of payments)
+function minimizeDebts(balances) {
+  const debts = [];
+  const entries = Object.entries(balances).map(([uid, bal]) => ({
+    uid,
+    bal: Math.round(bal * 100) / 100,
+  }));
+  let pos = entries.filter((e) => e.bal > 0).sort((a, b) => b.bal - a.bal);
+  let neg = entries.filter((e) => e.bal < 0).sort((a, b) => a.bal - b.bal);
+
+  let i = 0,
+    j = 0;
+  while (i < neg.length && j < pos.length) {
+    const from = neg[i],
+      to = pos[j];
+    const amount = Math.min(-from.bal, to.bal);
+    if (amount > 0.009) {
+      debts.push({
+        from: from.uid,
+        to: to.uid,
+        amount: Math.round(amount * 100) / 100,
+      });
+      from.bal += amount;
+      to.bal -= amount;
+    }
+    if (Math.abs(from.bal) < 0.01) i++;
+    if (Math.abs(to.bal) < 0.01) j++;
+  }
+  return debts;
+}
 
 function SettleUp() {
   const navigate = useNavigate();
@@ -11,97 +66,83 @@ function SettleUp() {
   const [users, setUsers] = useState({});
   const [debts, setDebts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const toggleMobileMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
 
+  // Move fetchData outside useEffect so we can call it from handleSettle
+  const fetchData = async () => {
+    if (!auth.currentUser || !groupId) {
+      setError("Invalid group or user not logged in.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      // Fetch group
+      const groupRef = doc(db, "groups", groupId);
+      const groupSnap = await getDoc(groupRef);
+      if (!groupSnap.exists()) throw new Error("Group not found.");
+      const groupData = { id: groupSnap.id, ...groupSnap.data() };
+      setGroup(groupData);
+
+      // Fetch users
+      const userPromises = groupData.members.map(async (uid) => {
+        const userRef = doc(db, "users", uid);
+        const userSnap = await getDoc(userRef);
+        return {
+          uid,
+          ...(userSnap.exists() ? userSnap.data() : { displayName: uid }),
+        };
+      });
+      const userData = await Promise.all(userPromises);
+      const userMap = Object.fromEntries(userData.map((u) => [u.uid, u]));
+      setUsers(userMap);
+
+      // Fetch all transactions for this group
+      const txSnap = await getDocs(collection(db, "transactions"));
+      const txList = txSnap.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .filter((txn) => txn.groupId === groupId);
+
+      // Calculate balances from transactions
+      const balances = calculateBalances(groupData.members, txList);
+
+      // Minimize debts
+      const debtList = minimizeDebts(balances);
+      setDebts(debtList);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      if (!auth.currentUser || !groupId) {
-        setError('Invalid group or user not logged in.');
-        setLoading(false);
-        return;
-      }
-
-      try {
-        // Fetch group
-        const groupRef = doc(db, 'groups', groupId);
-        const groupSnap = await getDoc(groupRef);
-        if (!groupSnap.exists()) throw new Error('Group not found.');
-        const groupData = { id: groupSnap.id, ...groupSnap.data() };
-        setGroup(groupData);
-
-        // Fetch users
-        const userPromises = groupData.members.map(async (uid) => {
-          const userRef = doc(db, 'users', uid);
-          const userSnap = await getDoc(userRef);
-          return { uid, ...(userSnap.exists() ? userSnap.data() : { displayName: uid }) };
-        });
-        const userData = await Promise.all(userPromises);
-        const userMap = Object.fromEntries(userData.map((u) => [u.uid, u]));
-        setUsers(userMap);
-
-        // Calculate debts
-        const balance = groupData.balance || {};
-        const debtList = [];
-        for (const fromUid of groupData.members) {
-          for (const toUid of groupData.members) {
-            if (fromUid < toUid && (balance[fromUid] || 0) < 0 && (balance[toUid] || 0) > 0) {
-              const amount = Math.min(Math.abs(balance[fromUid] || 0), balance[toUid] || 0);
-              if (amount > 0) {
-                debtList.push({ from: fromUid, to: toUid, amount });
-              }
-            }
-          }
-        }
-        setDebts(debtList);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchData();
+    // eslint-disable-next-line
   }, [groupId]);
 
+  // Handle settle action: add a settlement transaction
   const handleSettle = async (debt) => {
     try {
-      // Record settlement transaction
-      const settlement = {
+      await addDoc(collection(db, "transactions"), {
         groupId,
-        type: 'settlement',
+        type: "settlement",
         amount: debt.amount,
         from: debt.from,
         to: debt.to,
         createdAt: Timestamp.fromDate(new Date()),
-      };
-      await addDoc(collection(db, 'transactions'), settlement);
-
-      // Update group balances
-      const balanceUpdate = {
-        [`balance.${debt.from}`]: (group.balance?.[debt.from] || 0) + debt.amount,
-        [`balance.${debt.to}`]: (group.balance?.[debt.to] || 0) - debt.amount,
-      };
-      await updateDoc(doc(db, 'groups', groupId), { ...balanceUpdate });
-
-      // Refresh debts
-      setDebts((prev) => prev.filter((d) => d.from !== debt.from || d.to !== debt.to));
-      setGroup((prev) => ({
-        ...prev,
-        balance: {
-          ...prev.balance,
-          [debt.from]: (prev.balance?.[debt.from] || 0) + debt.amount,
-          [debt.to]: (prev.balance?.[debt.to] || 0) - debt.amount,
-        },
-      }));
+      });
+      navigate(`/groups/${groupId}`);
     } catch (err) {
       setError(`Failed to settle: ${err.message}`);
     }
   };
 
-  if (loading) return <div className="text-center p-4 text-[#4e7297]">Loading...</div>;
+  if (loading)
+    return <div className="text-center p-4 text-[#4e7297]">Loading...</div>;
   if (error) return <div className="text-center p-4 text-red-500">{error}</div>;
   if (!group) return null;
 
@@ -116,7 +157,12 @@ function SettleUp() {
       <div className="min-h-screen bg-slate-50">
         <header className="flex items-center justify-between border-b border-[#e7edf3] px-4 md:px-10 py-3 relative z-10 bg-slate-50">
           <div className="flex items-center gap-4 text-[#0e141b]">
-            <svg className="w-4 h-4" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <svg
+              className="w-4 h-4"
+              viewBox="0 0 48 48"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
               <path
                 fillRule="evenodd"
                 clipRule="evenodd"
@@ -124,14 +170,18 @@ function SettleUp() {
                 fill="currentColor"
               />
             </svg>
-            <h2 className="text-lg font-bold tracking-[-0.015em]">ExpenseTracker</h2>
+            <h2 className="text-lg font-bold tracking-[-0.015em]">
+              ExpenseTracker
+            </h2>
           </div>
           <div className="hidden md:flex items-center gap-8">
             <nav className="flex gap-9 text-sm font-medium text-[#0e141b]">
               <NavLink
                 to="/dashboard"
                 className={({ isActive }) =>
-                  isActive ? 'text-[#197ce5] font-semibold' : 'hover:text-[#197ce5] transition'
+                  isActive
+                    ? "text-[#197ce5] font-semibold"
+                    : "hover:text-[#197ce5] transition"
                 }
               >
                 Dashboard
@@ -139,7 +189,9 @@ function SettleUp() {
               <NavLink
                 to="/groups"
                 className={({ isActive }) =>
-                  isActive ? 'text-[#197ce5] font-semibold' : 'hover:text-[#197ce5] transition'
+                  isActive
+                    ? "text-[#197ce5] font-semibold"
+                    : "hover:text-[#197ce5] transition"
                 }
               >
                 Groups
@@ -147,7 +199,9 @@ function SettleUp() {
               <NavLink
                 to="/friends"
                 className={({ isActive }) =>
-                  isActive ? 'text-[#197ce5] font-semibold' : 'hover:text-[#197ce5] transition'
+                  isActive
+                    ? "text-[#197ce5] font-semibold"
+                    : "hover:text-[#197ce5] transition"
                 }
               >
                 Friends
@@ -155,7 +209,9 @@ function SettleUp() {
               <NavLink
                 to="/expense-list"
                 className={({ isActive }) =>
-                  isActive ? 'text-[#197ce5] font-semibold' : 'hover:text-[#197ce5] transition'
+                  isActive
+                    ? "text-[#197ce5] font-semibold"
+                    : "hover:text-[#197ce5] transition"
                 }
               >
                 Expenses
@@ -163,48 +219,81 @@ function SettleUp() {
               <NavLink
                 to={`/groups/${groupId}/settle-up`}
                 className={({ isActive }) =>
-                  isActive ? 'text-[#197ce5] font-semibold' : 'hover:text-[#197ce5] transition'
+                  isActive
+                    ? "text-[#197ce5] font-semibold"
+                    : "hover:text-[#197ce5] transition"
                 }
               >
                 Settle Up
               </NavLink>
             </nav>
             <button className="h-10 px-2.5 flex items-center justify-center gap-2 rounded-full bg-[#e7edf3] font-bold text-sm tracking-[0.015em] text-[#0e141b]">
-              <svg width="20" height="20" fill="currentColor" viewBox="0 0 256 256">
+              <svg
+                width="20"
+                height="20"
+                fill="currentColor"
+                viewBox="0 0 256 256"
+              >
                 <path d="M221.8,175.94C216.25,166.38,208,139.33,208,104A80,80,0,1,0,48,104c0,35.34-8.26,62.38-13.81,71.94A16,16,0,0,0,48,200H88.81a40,40,0,0,0,78.38,0H208a16,16,0,0,0,13.8-24.06ZM128,216a24,24,0,0,1-22.62-16h45.24A24,24,0,0,1,128,216ZM48,184c7.7-13.24,16-43.92,16-80a64,64,0,1,1,128,0c0,36.05,8.28,66.73,16,80Z" />
               </svg>
             </button>
             <div
               className="w-10 h-10 bg-cover bg-center rounded-full"
-              style={{ backgroundImage: `url("${auth.currentUser?.photoURL || 'https://via.placeholder.com/40'}")` }}
+              style={{
+                backgroundImage: `url("${PROFILE_IMG}")`,
+              }}
             />
           </div>
           <button
             className="md:hidden flex items-center p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-[#0e141b]"
             onClick={toggleMobileMenu}
-            aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
+            aria-label={isMobileMenuOpen ? "Close menu" : "Open menu"}
           >
             {isMobileMenuOpen ? (
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+              <svg
+                className="w-6 h-6"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M6 18L18 6M6 6l12 12"
+                ></path>
               </svg>
             ) : (
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7"></path>
+              <svg
+                className="w-6 h-6"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M4 6h16M4 12h16m-7 6h7"
+                ></path>
               </svg>
             )}
           </button>
         </header>
         <div
           className={`md:hidden fixed inset-0 bg-black z-20 transition-opacity duration-300 ease-in-out ${
-            isMobileMenuOpen ? 'bg-opacity-40' : 'bg-opacity-0 pointer-events-none'
+            isMobileMenuOpen
+              ? "bg-opacity-40"
+              : "bg-opacity-0 pointer-events-none"
           }`}
           onClick={toggleMobileMenu}
           aria-hidden="true"
         />
         <div
           className={`md:hidden fixed top-0 right-0 h-full w-72 bg-white z-30 shadow-2xl flex flex-col transform transition-all duration-300 ease-in-out ${
-            isMobileMenuOpen ? 'translate-x-0' : 'translate-x-full'
+            isMobileMenuOpen ? "translate-x-0" : "translate-x-full"
           }`}
         >
           <div className="flex justify-between items-center p-4 border-b border-slate-200">
@@ -214,7 +303,11 @@ function SettleUp() {
               className="p-1 rounded-md hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
               aria-label="Close menu"
             >
-              <svg className="w-5 h-5 text-slate-700" viewBox="0 0 20 20" fill="currentColor">
+              <svg
+                className="w-5 h-5 text-slate-700"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
                 <path
                   fillRule="evenodd"
                   d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
@@ -228,20 +321,33 @@ function SettleUp() {
               <div className="flex items-center gap-3 mb-3">
                 <img
                   className="w-12 h-12 rounded-full border-2 border-[#197ce5] object-cover"
-                  src={auth.currentUser?.photoURL || 'https://via.placeholder.com/40'}
+                  src={PROFILE_IMG}
                   alt="User Profile"
                 />
                 <div>
-                  <p className="text-base font-semibold text-[#0e141b] truncate" title={auth.currentUser?.displayName || auth.currentUser?.email}>
-                    {auth.currentUser?.displayName || 'User Name'}
+                  <p
+                    className="text-base font-semibold text-[#0e141b] truncate"
+                    title={
+                      auth.currentUser?.displayName || auth.currentUser?.email
+                    }
+                  >
+                    {auth.currentUser?.displayName || "User Name"}
                   </p>
-                  <p className="text-xs text-slate-500 truncate" title={auth.currentUser?.email}>
+                  <p
+                    className="text-xs text-slate-500 truncate"
+                    title={auth.currentUser?.email}
+                  >
                     {auth.currentUser?.email}
                   </p>
                 </div>
               </div>
               <button className="w-full h-9 flex items-center justify-center gap-2 rounded-md bg-slate-100 hover:bg-slate-200 font-medium text-sm text-[#0e141b] transition-colors">
-                <svg width="16" height="16" fill="currentColor" viewBox="0 0 256 256">
+                <svg
+                  width="16"
+                  height="16"
+                  fill="currentColor"
+                  viewBox="0 0 256 256"
+                >
                   <path d="M221.8,175.94C216.25,166.38,208,139.33,208,104A80,80,0,1,0,48,104c0,35.34-8.26,62.38-13.81,71.94A16,16,0,0,0,48,200H88.81a40,40,0,0,0,78.38,0H208a16,16,0,0,0,13.8-24.06ZM128,216a24,24,0,0,1-22.62-16h45.24A24,24,0,0,1,128,216ZM48,184c7.7-13.24,16-43.92,16-80a64,64,0,1,1,128,0c0,36.05,8.28,66.73,16,80Z" />
                 </svg>
                 Notifications
@@ -250,18 +356,20 @@ function SettleUp() {
           )}
           <nav className="flex-grow px-2 py-2 space-y-1 overflow-y-auto border-t border-slate-200">
             {[
-              { to: '/dashboard', label: 'Dashboard' },
-              { to: '/groups', label: 'Groups' },
-              { to: '/friends', label: 'Friends' },
-              { to: '/expense-list', label: 'Expenses' },
-              { to: `/groups/${groupId}/settle-up`, label: 'Settle Up' },
+              { to: "/dashboard", label: "Dashboard" },
+              { to: "/groups", label: "Groups" },
+              { to: "/friends", label: "Friends" },
+              { to: "/expense-list", label: "Expenses" },
+              { to: `/groups/${groupId}/settle-up`, label: "Settle Up" },
             ].map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
                 className={({ isActive }) =>
                   `block w-full text-left py-2.5 px-3 rounded-md transition-colors duration-150 text-sm font-medium ${
-                    isActive ? 'bg-[#e2eaf5] text-[#197ce5] font-semibold' : 'text-slate-700 hover:bg-slate-100 active:bg-slate-200'
+                    isActive
+                      ? "bg-[#e2eaf5] text-[#197ce5] font-semibold"
+                      : "text-slate-700 hover:bg-slate-100 active:bg-slate-200"
                   }`
                 }
                 onClick={toggleMobileMenu}
@@ -274,11 +382,17 @@ function SettleUp() {
             <button
               onClick={async () => {
                 await auth.signOut();
-                navigate('/login');
+                navigate("/login");
               }}
               className="w-full text-left py-2.5 px-3 rounded-md hover:bg-red-50 hover:text-red-700 text-slate-700 text-sm font-medium transition-colors flex items-center gap-2"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 256 256">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                fill="currentColor"
+                viewBox="0 0 256 256"
+              >
                 <path d="M120,216a8,8,0,0,1-8,8H48a16,16,0,0,1-16-16V48A16,16,0,0,1,48,32h64a8,8,0,0,1,0,16H48V208h64A8,8,0,0,1,120,216Zm105.66-90.34a8,8,0,0,0-11.32,0l-48,48a8,8,0,0,0,0,11.32l48,48a8,8,0,0,0,11.32-11.32L181.31,184H224a8,8,0,0,0,0-16H181.31l32.35-32.34A8,8,0,0,0,225.66,125.66Zm-41-50.34a8,8,0,0,0-11.32,0L125.66,123a8,8,0,0,0,0,11.32L173.34,182a8,8,0,0,0,11.32-11.32L140.31,128.34l44.35-44.34A8,8,0,0,0,184.66,75.32Z"></path>
               </svg>
               Logout
@@ -287,24 +401,32 @@ function SettleUp() {
         </div>
         <div className="px-4 md:px-40 py-5 flex justify-center">
           <div className="flex flex-col max-w-[960px] w-full">
-            <p className="text-[#0e141b] text-[32px] font-bold p-4">Settle Up</p>
+            <p className="text-[#0e141b] text-[32px] font-bold p-4">
+              Settle Up
+            </p>
             <div className="flex flex-col gap-6 p-4">
               <div>
-                <h3 className="text-lg font-semibold text-[#0e141b] mb-2">You Owe</h3>
+                <h3 className="text-lg font-semibold text-[#0e141b] mb-2">
+                  You Owe
+                </h3>
                 {youOwe.length === 0 ? (
-                  <p className="text-[#4e7297] text-sm">You don't owe anyone.</p>
+                  <p className="text-[#4e7297] text-sm">
+                    You don't owe anyone.
+                  </p>
                 ) : (
                   <ul className="space-y-2">
                     {youOwe.map((debt, index) => (
-                      <li key={index} className="flex items-center justify-between p-2 bg-[#e7edf3] rounded-lg">
+                      <li
+                        key={index}
+                        className="flex items-center justify-between p-2 bg-[#e7edf3] rounded-lg"
+                      >
                         <div className="flex items-center gap-3">
-                          <img
-                            src={users[debt.to]?.photoURL || 'https://via.placeholder.com/40'}
-                            alt={users[debt.to]?.displayName}
-                            className="w-10 h-10 rounded-full"
-                          />
                           <span className="text-[#0e141b] text-sm">
-                            You owe {users[debt.to]?.displayName} ${debt.amount.toFixed(2)}
+                            You owe{" "}
+                            {users[debt.to]?.name ||
+                              users[debt.to]?.displayName ||
+                              debt.to}{" "}
+                            ${debt.amount.toFixed(2)}
                           </span>
                         </div>
                         <button
@@ -319,21 +441,24 @@ function SettleUp() {
                 )}
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-[#0e141b] mb-2">Owes You</h3>
+                <h3 className="text-lg font-semibold text-[#0e141b] mb-2">
+                  Owes You
+                </h3>
                 {owesYou.length === 0 ? (
                   <p className="text-[#4e7297] text-sm">Nobody owes you.</p>
                 ) : (
                   <ul className="space-y-2">
                     {owesYou.map((debt, index) => (
-                      <li key={index} className="flex items-center justify-between p-2 bg-[#e7edf3] rounded-lg">
+                      <li
+                        key={index}
+                        className="flex items-center justify-between p-2 bg-[#e7edf3] rounded-lg"
+                      >
                         <div className="flex items-center gap-3">
-                          <img
-                            src={users[debt.from]?.photoURL || 'https://via.placeholder.com/40'}
-                            alt={users[debt.from]?.displayName}
-                            className="w-10 h-10 rounded-full"
-                          />
                           <span className="text-[#0e141b] text-sm">
-                            {users[debt.from]?.displayName} owes you ${debt.amount.toFixed(2)}
+                            {users[debt.from]?.name ||
+                              users[debt.from]?.displayName ||
+                              debt.from}{" "}
+                            owes you ${debt.amount.toFixed(2)}
                           </span>
                         </div>
                         <button

@@ -4,6 +4,8 @@ import { auth, db } from "../../firebase";
 import { doc, getDoc, collection, addDoc, updateDoc } from "firebase/firestore";
 import { Timestamp } from "firebase/firestore";
 
+const PROFILE_IMG = "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"; // Flaticon free profile icon
+
 function ExpenseForm() {
   const navigate = useNavigate();
   const { groupId } = useParams();
@@ -174,8 +176,7 @@ function ExpenseForm() {
 
   if (loading)
     return <div className="text-center p-4 text-[#4e7297]">Loading...</div>;
-  if (error)
-    return <div className="text-center p-4 text-red-500">{error}</div>;
+  if (error) return <div className="text-center p-4 text-red-500">{error}</div>;
   if (!group) return null;
 
   return (
@@ -262,9 +263,7 @@ function ExpenseForm() {
             <div
               className="w-10 h-10 bg-cover bg-center rounded-full"
               style={{
-                backgroundImage: `url("${
-                  auth.currentUser?.photoURL || "https://via.placeholder.com/40"
-                }")`,
+                backgroundImage: `url("${PROFILE_IMG}")`,
               }}
             />
           </div>
@@ -312,8 +311,11 @@ function ExpenseForm() {
           {/* Overlay */}
           <div
             className={`md:hidden fixed inset-0 bg-black z-20 transition-opacity duration-300 ease-in-out
-              ${isMobileMenuOpen ? "bg-opacity-40" : "bg-opacity-0 pointer-events-none"
-            }`}
+              ${
+                isMobileMenuOpen
+                  ? "bg-opacity-40"
+                  : "bg-opacity-0 pointer-events-none"
+              }`}
             onClick={toggleMobileMenu}
             aria-hidden="true"
           />
@@ -346,47 +348,44 @@ function ExpenseForm() {
               </button>
             </div>
 
-            {/* Profile Section (using auth.currentUser) */}
-            {auth.currentUser && (
-              <div className="px-4 py-4">
-                <div className="flex items-center gap-3 mb-3">
-                  <img
-                    className="w-12 h-12 rounded-full border-2 border-[#197ce5] object-cover"
-                    src={
-                      auth.currentUser?.photoURL ||
-                      "https://via.placeholder.com/40"
+            {/* Profile Section (using PROFILE_IMG) */}
+            <div className="px-4 py-4">
+              <div className="flex items-center gap-3 mb-3">
+                <img
+                  className="w-12 h-12 rounded-full border-2 border-[#197ce5] object-cover"
+                  src={PROFILE_IMG}
+                  alt="User Profile"
+                />
+                <div>
+                  <p
+                    className="text-base font-semibold text-[#0e141b] truncate"
+                    title={
+                      auth.currentUser?.displayName || auth.currentUser?.email
                     }
-                    alt="User Profile"
-                  />
-                  <div>
-                    <p
-                      className="text-base font-semibold text-[#0e141b] truncate"
-                      title={auth.currentUser?.displayName || auth.currentUser?.email}
-                    >
-                      {auth.currentUser?.displayName || "User Name"}
-                    </p>
-                    <p
-                      className="text-xs text-slate-500 truncate"
-                      title={auth.currentUser?.email}
-                    >
-                      {auth.currentUser?.email}
-                    </p>
-                  </div>
-                </div>
-                {/* Notification button for mobile */}
-                <button className="w-full h-9 flex items-center justify-center gap-2 rounded-md bg-slate-100 hover:bg-slate-200 font-medium text-sm text-[#0e141b] transition-colors">
-                  <svg
-                    width="16"
-                    height="16"
-                    fill="currentColor"
-                    viewBox="0 0 256 256"
                   >
-                    <path d="M221.8,175.94C216.25,166.38,208,139.33,208,104A80,80,0,1,0,48,104c0,35.34-8.26,62.38-13.81,71.94A16,16,0,0,0,48,200H88.81a40,40,0,0,0,78.38,0H208a16,16,0,0,0,13.8-24.06ZM128,216a24,24,0,0,1-22.62-16h45.24A24,24,0,0,1,128,216ZM48,184c7.7-13.24,16-43.92,16-80a64,64,0,1,1,128,0c0,36.05,8.28,66.73,16,80Z" />
-                  </svg>
-                  Notifications
-                </button>
+                    {auth.currentUser?.displayName || "User Name"}
+                  </p>
+                  <p
+                    className="text-xs text-slate-500 truncate"
+                    title={auth.currentUser?.email}
+                  >
+                    {auth.currentUser?.email}
+                  </p>
+                </div>
               </div>
-            )}
+              {/* Notification button for mobile */}
+              <button className="w-full h-9 flex items-center justify-center gap-2 rounded-md bg-slate-100 hover:bg-slate-200 font-medium text-sm text-[#0e141b] transition-colors">
+                <svg
+                  width="16"
+                  height="16"
+                  fill="currentColor"
+                  viewBox="0 0 256 256"
+                >
+                  <path d="M221.8,175.94C216.25,166.38,208,139.33,208,104A80,80,0,1,0,48,104c0,35.34-8.26,62.38-13.81,71.94A16,16,0,0,0,48,200H88.81a40,40,0,0,0,78.38,0H208a16,16,0,0,0,13.8-24.06ZM128,216a24,24,0,0,1-22.62-16h45.24A24,24,0,0,1,128,216ZM48,184c7.7-13.24,16-43.92,16-80a64,64,0,1,1,128,0c0,36.05,8.28,66.73,16,80Z" />
+                </svg>
+                Notifications
+              </button>
+            </div>
 
             {/* Navigation */}
             <nav className="flex-grow px-2 py-2 space-y-1 overflow-y-auto border-t border-slate-200">
@@ -438,6 +437,7 @@ function ExpenseForm() {
           </div>
         </>
 
+        {/* Expense Form */}
         <form
           onSubmit={handleSubmit}
           className="px-4 py-5 sm:px-6 md:px-40 flex flex-1 justify-center"
@@ -494,7 +494,7 @@ function ExpenseForm() {
                   <option value="">Select person</option>
                   {group.members.map((uid) => (
                     <option key={uid} value={uid}>
-                      {users[uid]?.displayName || uid}
+                      {users[uid]?.name || users[uid]?.displayName || uid}{" "}
                     </option>
                   ))}
                 </select>
@@ -533,17 +533,22 @@ function ExpenseForm() {
                   Split with
                 </p>
                 {group.members.map((uid) => (
-                  <div key={uid} className="flex flex-col sm:flex-row sm:items-center gap-2 py-1">
+                  <div
+                    key={uid}
+                    className="flex flex-col sm:flex-row sm:items-center gap-2 py-1"
+                  >
                     <div className="flex items-center gap-2">
                       <input
                         type="checkbox"
                         checked={participants.includes(uid)}
                         onChange={() => handleParticipantChange(uid)}
                         className="form-checkbox h-5 w-5 text-blue-600"
-                        disabled={splitMode === "custom" && participants.length <= 1}
+                        disabled={
+                          splitMode === "custom" && participants.length <= 1
+                        }
                       />
                       <span className="text-base text-[#101418]">
-                        {users[uid]?.displayName || uid}
+                        {users[uid]?.name || users[uid]?.displayName || uid}{" "}
                       </span>
                     </div>
                     {splitMode === "custom" && participants.includes(uid) && (

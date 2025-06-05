@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, NavLink } from 'react-router-dom';
-import { auth, db } from '../../firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import React, { useState, useEffect } from "react";
+import { useNavigate, NavLink } from "react-router-dom";
+import { auth, db } from "../../firebase";
+import { collection, query, where, getDocs } from "firebase/firestore";
 
 function GroupList() {
+  const PROFILE_IMG = "https://cdn-icons-png.flaticon.com/512/3135/3135715.png";
+
   const navigate = useNavigate();
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // State for mobile menu
 
   const toggleMobileMenu = () => {
@@ -17,24 +19,48 @@ function GroupList() {
   useEffect(() => {
     const fetchGroups = async () => {
       if (!auth.currentUser) {
-        setError('Please log in to view groups.');
+        setError("Please log in to view groups.");
         setLoading(false);
         return;
       }
 
       try {
+        // Fetch groups
         const q = query(
-          collection(db, 'groups'),
-          where('members', 'array-contains', auth.currentUser.uid)
+          collection(db, "groups"),
+          where("members", "array-contains", auth.currentUser.uid)
         );
         const querySnapshot = await getDocs(q);
         const groupList = querySnapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
         }));
-        setGroups(groupList);
+
+        // For each group, fetch transactions and total the amount
+        const groupTotals = {};
+        for (const group of groupList) {
+          const txSnap = await getDocs(
+            query(
+              collection(db, "transactions"),
+              where("groupId", "==", group.id)
+            )
+          );
+          const total = txSnap.docs.reduce(
+            (sum, doc) => sum + Number(doc.data().amount || 0),
+            0
+          );
+          groupTotals[group.id] = total;
+        }
+
+        // Add total property to each group
+        const enrichedGroups = groupList.map((group) => ({
+          ...group,
+          totalAmount: groupTotals[group.id] || 0,
+        }));
+
+        setGroups(enrichedGroups);
       } catch (err) {
-        console.error("Error fetching groups:", err); // Log the error for debugging
+        console.error("Error fetching groups:", err);
         setError(err.message);
       } finally {
         setLoading(false);
@@ -53,7 +79,12 @@ function GroupList() {
         {/* Header */}
         <header className="flex items-center justify-between border-b border-[#e7edf3] px-4 md:px-10 py-3 relative z-10 bg-slate-50">
           <div className="flex items-center gap-4 text-[#0e141b]">
-            <svg className="w-4 h-4" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <svg
+              className="w-4 h-4"
+              viewBox="0 0 48 48"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
               <path
                 fillRule="evenodd"
                 clipRule="evenodd"
@@ -61,7 +92,9 @@ function GroupList() {
                 fill="currentColor"
               />
             </svg>
-            <h2 className="text-lg font-bold tracking-[-0.015em]">ExpenseTracker</h2>
+            <h2 className="text-lg font-bold tracking-[-0.015em]">
+              ExpenseTracker
+            </h2>
           </div>
 
           {/* Desktop Navigation & User Controls */}
@@ -71,8 +104,8 @@ function GroupList() {
                 to="/dashboard"
                 className={({ isActive }) =>
                   isActive
-                    ? 'text-[#197ce5] font-semibold' // Adjusted to primary blue
-                    : 'hover:text-[#197ce5] transition'
+                    ? "text-[#197ce5] font-semibold" // Adjusted to primary blue
+                    : "hover:text-[#197ce5] transition"
                 }
               >
                 Dashboard
@@ -81,8 +114,8 @@ function GroupList() {
                 to="/groups"
                 className={({ isActive }) =>
                   isActive
-                    ? 'text-[#197ce5] font-semibold' // Adjusted to primary blue
-                    : 'hover:text-[#197ce5] transition'
+                    ? "text-[#197ce5] font-semibold" // Adjusted to primary blue
+                    : "hover:text-[#197ce5] transition"
                 }
               >
                 Groups
@@ -92,8 +125,8 @@ function GroupList() {
                 to="/friends"
                 className={({ isActive }) =>
                   isActive
-                    ? 'text-[#197ce5] font-semibold'
-                    : 'hover:text-[#197ce5] transition'
+                    ? "text-[#197ce5] font-semibold"
+                    : "hover:text-[#197ce5] transition"
                 }
               >
                 Friends
@@ -102,8 +135,8 @@ function GroupList() {
                 to="/expense-list"
                 className={({ isActive }) =>
                   isActive
-                    ? 'text-[#197ce5] font-semibold' // Adjusted to primary blue
-                    : 'hover:text-[#197ce5] transition'
+                    ? "text-[#197ce5] font-semibold" // Adjusted to primary blue
+                    : "hover:text-[#197ce5] transition"
                 }
               >
                 Expenses
@@ -121,9 +154,11 @@ function GroupList() {
               </svg>
             </button>
             <div
-              className="w-10 h-10 bg-cover bg-center rounded-full"
-              style={{ backgroundImage: `url("${auth.currentUser?.photoURL || 'https://via.placeholder.com/40'}")` }}
-            />
+    className="w-10 h-10 bg-cover bg-center rounded-full"
+    style={{
+      backgroundImage: `url("${PROFILE_IMG}")`,
+    }}
+  />
           </div>
 
           {/* Mobile Menu Button (Hamburger) */}
@@ -171,7 +206,11 @@ function GroupList() {
           {/* Overlay */}
           <div
             className={`md:hidden fixed inset-0 bg-black z-20 transition-opacity duration-300 ease-in-out
-              ${isMobileMenuOpen ? "bg-opacity-40" : "bg-opacity-0 pointer-events-none"}`}
+              ${
+                isMobileMenuOpen
+                  ? "bg-opacity-40"
+                  : "bg-opacity-0 pointer-events-none"
+              }`}
             onClick={toggleMobileMenu}
             aria-hidden="true"
           />
@@ -210,13 +249,15 @@ function GroupList() {
                 <div className="flex items-center gap-3 mb-3">
                   <img
                     className="w-12 h-12 rounded-full border-2 border-[#197ce5] object-cover" // Adjusted border color
-                    src={auth.currentUser?.photoURL || 'https://via.placeholder.com/40'}
+                    src={PROFILE_IMG}
                     alt="User Profile"
                   />
                   <div>
                     <p
                       className="text-base font-semibold text-[#0e141b] truncate"
-                      title={auth.currentUser?.displayName || auth.currentUser?.email}
+                      title={
+                        auth.currentUser?.displayName || auth.currentUser?.email
+                      }
                     >
                       {auth.currentUser?.displayName || "User Name"}
                     </p>
@@ -242,7 +283,6 @@ function GroupList() {
                 </button>
               </div>
             )}
-
 
             {/* Navigation */}
             <nav className="flex-grow px-2 py-2 space-y-1 overflow-y-auto border-t border-slate-200">
@@ -291,18 +331,25 @@ function GroupList() {
         <div className="px-4 sm:px-6 md:px-10 lg:px-40 py-5 flex justify-center">
           <div className="flex flex-col max-w-[960px] w-full">
             <div className="flex justify-between gap-3 p-4">
-              <h2 className="text-[32px] font-bold text-[#0e141b]">Your groups</h2>
+              <h2 className="text-[32px] font-bold text-[#0e141b]">
+                Your groups
+              </h2>
               <button
-                onClick={() => navigate('/groups/create')} // Corrected path
-class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-full h-8 px-4 bg-[#eaedf1] text-[#101418] text-sm font-medium leading-normal"              >
+                onClick={() => navigate("/groups/create")} // Corrected path
+                class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-full h-8 px-4 bg-[#eaedf1] text-[#101418] text-sm font-medium leading-normal"
+              >
                 New group
               </button>
             </div>
             {error && <p className="text-red-500 text-center p-4">{error}</p>}
             {loading ? (
-              <p className="text-center text-[#4e7297] p-4">Loading groups...</p>
+              <p className="text-center text-[#4e7297] p-4">
+                Loading groups...
+              </p>
             ) : groups.length === 0 ? (
-              <p className="text-center text-[#4e7297] p-4">No groups found. Create one!</p>
+              <p className="text-center text-[#4e7297] p-4">
+                No groups found. Create one!
+              </p>
             ) : (
               <div className="grid grid-cols-[repeat(auto-fit,minmax(158px,1fr))] gap-3 p-4">
                 {groups.map((group) => (
@@ -312,15 +359,21 @@ class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-cente
                     onClick={() => navigate(`/groups/${group.id}`)}
                   >
                     <div
-                      className="w-full aspect-square bg-center bg-no-repeat bg-cover rounded-xl"
-                      // Use a placeholder or actual group image if available in Firestore
-                      style={{ backgroundImage: `url('${group.imageUrl || 'https://via.placeholder.com/150'}')` }}
+                      className="w-full aspect-[4/3] h-40 bg-center bg-no-repeat bg-cover rounded-lg"
+                      style={{
+                        backgroundImage: `url('${
+                          group.imageUrl ||
+                          "https://images.pexels.com/photos/29875053/pexels-photo-29875053/free-photo-of-dramatic-cumulus-clouds-in-blue-sky.jpeg"
+                        }')`,
+                      }}
                     />
                     <div>
-                      <p className="text-base font-medium text-[#0e141b]">{group.name}</p>
+                      <p className="text-base font-medium text-[#0e141b]">
+                        {group.name}
+                      </p>
                       <p className="text-sm text-[#4e7297]">
                         {group.members?.length || 0} members · ₹
-                        {Object.values(group.balance || {}).reduce((a, b) => a + Math.abs(b), 0).toFixed(2)} total
+                        {group.totalAmount?.toFixed(2) || "0.00"} total
                       </p>
                     </div>
                   </div>
